@@ -25,17 +25,24 @@ input{width:100%;padding:12px;border:1px solid #d5dceb;border-radius:9px;font-si
 .login{max-width:420px;padding:22px}
 .login label{font-weight:700;font-size:14px}
 .stats{margin:22px 0}
-.pill{display:inline-block;background:#fff;border:1px solid #e5eaf3;border-radius:12px;padding:12px 16px;font-weight:700}
+.pill{display:inline-block;background:white;border:1px solid #e5eaf3;border-radius:12px;padding:12px 16px;font-weight:700}
 .tablewrap{overflow:auto}
-table{width:100%;border-collapse:collapse;min-width:650px}
+table{width:100%;border-collapse:collapse;min-width:720px}
 th,td{text-align:left;padding:15px 20px;border-bottom:1px solid #edf0f6;font-size:13px}
 th{color:#718096;background:#fafbfe;font-size:11px;text-transform:uppercase;letter-spacing:.7px}
 td{overflow-wrap:anywhere}
 .empty{padding:30px;color:#718096;text-align:center}
+.actions{display:flex;gap:8px;align-items:center}
 .download{display:inline-block;padding:8px 11px;font-size:12px;text-decoration:none;white-space:nowrap}
+.remove{background:#dc3545;padding:8px 11px;font-size:12px;white-space:nowrap}
 #message{padding:12px 0;color:#b42318;font-size:13px;overflow-wrap:anywhere}
 .hidden{display:none!important}
-@media(max-width:600px){h1{font-size:27px}.main{margin:24px auto}.panel-head{padding:14px}th,td{padding:12px}}
+@media(max-width:600px){
+ h1{font-size:27px}
+ .main{margin:24px auto}
+ .panel-head{padding:14px}
+ th,td{padding:12px}
+}
 </style>
 </head>
 
@@ -47,12 +54,13 @@ td{overflow-wrap:anywhere}
 <main class="main">
   <div class="eyebrow">Teacher portal</div>
   <h1>Homework submissions</h1>
-  <p>Sign in with the teacher password to review and download homework.</p>
+  <p>Review, download, and manage student homework.</p>
 
   <section class="panel login" id="loginPanel">
     <form id="loginForm">
       <label for="password">Teacher password</label>
-      <input id="password" type="password" autocomplete="current-password"
+      <input id="password" type="password"
+             autocomplete="current-password"
              placeholder="Enter teacher password" required>
       <button id="loginButton" type="submit">Open Dashboard</button>
     </form>
@@ -68,7 +76,7 @@ td{overflow-wrap:anywhere}
     <section class="panel">
       <div class="panel-head">
         <h2>Recent submissions</h2>
-        <button id="refresh">Refresh</button>
+        <button id="refresh" type="button">Refresh</button>
       </div>
 
       <div class="tablewrap">
@@ -79,21 +87,30 @@ td{overflow-wrap:anywhere}
               <th>Stage</th>
               <th>File</th>
               <th>Submitted</th>
-              <th>Action</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="5" class="empty">Enter the teacher password.</td></tr>
+            <tr>
+              <td colspan="5" class="empty">Enter the teacher password.</td>
+            </tr>
           </tbody>
         </table>
       </div>
     </section>
+
+    <p>
+      <button id="logout" type="button">Lock Dashboard</button>
+    </p>
   </div>
 </main>
 
 <script>
 const FUNCTION_URL =
   "https://qwljyziwookssiuxahfr.supabase.co/functions/v1/teacher-homework";
+
+const SUPABASE_KEY =
+  "sb_publishable_UEnx7UzAp3l2lCTXRqRmQg_ZolHqMGU";
 
 const loginPanel = document.getElementById("loginPanel");
 const loginForm = document.getElementById("loginForm");
@@ -104,141 +121,193 @@ const message = document.getElementById("message");
 const rows = document.getElementById("rows");
 const count = document.getElementById("count");
 const refreshButton = document.getElementById("refresh");
+const logoutButton = document.getElementById("logout");
 
 let teacherPassword = "";
+let loading = false;
 
 function showMessage(text, isError = true) {
   message.textContent = text;
   message.style.color = isError ? "#b42318" : "#18794e";
 }
 
+async function callFunction(payload) {
+  const response = await fetch(FUNCTION_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_KEY
+    },
+    body: JSON.stringify({
+      ...payload,
+      password: teacherPassword
+    })
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      result.error ||
+      `Request failed (${response.status}). Check the Function settings.`
+    );
+  }
+
+  return result;
+}
+
+function makeCell(value) {
+  const td = document.createElement("td");
+  td.textContent = value || "—";
+  return td;
+}
+
+function showEmpty(text) {
+  rows.replaceChildren();
+
+  const tr = document.createElement("tr");
+  const td = document.createElement("td");
+
+  td.colSpan = 5;
+  td.className = "empty";
+  td.textContent = text;
+
+  tr.appendChild(td);
+  rows.appendChild(tr);
+}
+
 async function loadSubmissions() {
+  if (loading || !teacherPassword) return false;
+
+  loading = true;
   refreshButton.disabled = true;
   refreshButton.textContent = "Loading...";
   showMessage("");
-
-  rows.replaceChildren();
-  const loadingRow = document.createElement("tr");
-  const loadingCell = document.createElement("td");
-  loadingCell.colSpan = 5;
-  loadingCell.className = "empty";
-  loadingCell.textContent = "Loading submissions...";
-  loadingRow.appendChild(loadingCell);
-  rows.appendChild(loadingRow);
+  showEmpty("Loading submissions...");
 
   try {
-    const response = await fetch(FUNCTION_URL, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "apikey": "sb_publishable_UEnx7UzAp3l2lCTXRqRmQg_ZolHqMGU"
-  },
-  body: JSON.stringify({ password: teacherPassword })
-});
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: teacherPassword })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || "Could not load submissions.");
-    }
-
+    const result = await callFunction({ action: "list" });
     const submissions = result.submissions || [];
+
     count.textContent = submissions.length;
     rows.replaceChildren();
 
-    if (submissions.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 5;
-      td.className = "empty";
-      td.textContent = "No homework has been submitted yet.";
-      tr.appendChild(td);
-      rows.appendChild(tr);
-      return;
-    }
+    if (!submissions.length) {
+      showEmpty("No homework has been submitted yet.");
+    } else {
+      for (const item of submissions) {
+        const tr = document.createElement("tr");
+        const files = item.files || [];
 
-    for (const item of submissions) {
-      const files = item.files || [];
-      const file = files[0] || null;
-      const tr = document.createElement("tr");
+        const fileNames = files.length
+          ? files.map(file => file.original_name).join(", ")
+          : "No file";
 
-      const values = [
-        item.student_name || "—",
-        item.stage || "—",
-        file ? file.original_name : "No file",
-        item.submitted_at
-          ? new Date(item.submitted_at).toLocaleString()
-          : "—"
-      ];
+        tr.appendChild(makeCell(item.student_name));
+        tr.appendChild(makeCell(item.stage));
+        tr.appendChild(makeCell(fileNames));
+        tr.appendChild(makeCell(
+          item.submitted_at
+            ? new Date(item.submitted_at).toLocaleString()
+            : "—"
+        ));
 
-      for (const value of values) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.appendChild(td);
+        const actionCell = document.createElement("td");
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        if (files.length) {
+          for (const file of files) {
+            const link = document.createElement("a");
+            link.className = "download";
+            link.textContent = files.length > 1 ? "Download file" : "Download";
+            link.href = file.download_url || "#";
+            link.setAttribute("download", file.original_name);
+            link.title = file.original_name;
+
+            if (!file.download_url) {
+              link.addEventListener("click", event => {
+                event.preventDefault();
+                showMessage("Download link unavailable. Refresh and try again.");
+              });
+            }
+
+            actions.appendChild(link);
+          }
+        } else {
+          actions.textContent = "No file";
+        }
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "remove";
+        removeButton.textContent = "Remove";
+
+        removeButton.addEventListener("click", async () => {
+          const confirmed = confirm(
+            `Permanently delete the submission from "${item.student_name}" and its uploaded files?`
+          );
+
+          if (!confirmed) return;
+
+          removeButton.disabled = true;
+          removeButton.textContent = "Removing...";
+          showMessage("");
+
+          try {
+            await callFunction({
+              action: "delete",
+              submission_id: item.id
+            });
+
+            showMessage("Submission and uploaded files deleted.", false);
+            await loadSubmissions();
+          } catch (error) {
+            showMessage("Could not delete: " + error.message);
+            removeButton.disabled = false;
+            removeButton.textContent = "Remove";
+          }
+        });
+
+        actions.appendChild(removeButton);
+        actionCell.appendChild(actions);
+        tr.appendChild(actionCell);
+        rows.appendChild(tr);
       }
-
-      const action = document.createElement("td");
-
-      if (file && file.download_url) {
-        const link = document.createElement("a");
-        link.className = "download";
-        link.textContent = "Download";
-        link.href = file.download_url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        action.appendChild(link);
-      } else if (file) {
-        action.textContent = "Download unavailable";
-      } else {
-        action.textContent = "—";
-      }
-
-      tr.appendChild(action);
-      rows.appendChild(tr);
     }
 
     showMessage("Submissions loaded successfully.", false);
+    return true;
   } catch (error) {
-    rows.replaceChildren();
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 5;
-    td.className = "empty";
-    td.textContent = "Could not load submissions.";
-    tr.appendChild(td);
-    rows.appendChild(tr);
-
-    showMessage("Error: " + (error.message || "Unknown error"));
-
-    if (error.message === "Incorrect teacher password.") {
-      teacherPassword = "";
-      loginPanel.classList.remove("hidden");
-      dashboard.classList.add("hidden");
-      passwordInput.value = "";
-      passwordInput.focus();
-    }
+    showEmpty("Could not load submissions.");
+    showMessage("Error: " + error.message);
+    return false;
   } finally {
+    loading = false;
     refreshButton.disabled = false;
     refreshButton.textContent = "Refresh";
   }
 }
 
-loginForm.addEventListener("submit", async (event) => {
+loginForm.addEventListener("submit", async event => {
   event.preventDefault();
-  teacherPassword = passwordInput.value;
 
+  teacherPassword = passwordInput.value;
   loginButton.disabled = true;
   loginButton.textContent = "Checking...";
+
   dashboard.classList.remove("hidden");
 
-  await loadSubmissions();
+  const success = await loadSubmissions();
 
-  if (teacherPassword) {
+  if (success) {
     loginPanel.classList.add("hidden");
+    passwordInput.value = "";
+  } else {
+    dashboard.classList.add("hidden");
+    loginPanel.classList.remove("hidden");
+    teacherPassword = "";
+    passwordInput.value = "";
   }
 
   loginButton.disabled = false;
@@ -246,6 +315,18 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 refreshButton.addEventListener("click", loadSubmissions);
+
+logoutButton.addEventListener("click", () => {
+  teacherPassword = "";
+  count.textContent = "0";
+  showMessage("");
+  showEmpty("Enter the teacher password.");
+
+  dashboard.classList.add("hidden");
+  loginPanel.classList.remove("hidden");
+  passwordInput.value = "";
+  passwordInput.focus();
+});
 </script>
 </body>
 </html>
