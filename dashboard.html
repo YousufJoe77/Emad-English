@@ -128,6 +128,13 @@ async function loadSubmissions() {
 
   try {
     const response = await fetch(FUNCTION_URL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "apikey": "sb_publishable_UEnx7UzAp3l2lCTXRqRmQg_ZolHqMGU"
+  },
+  body: JSON.stringify({ password: teacherPassword })
+});
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: teacherPassword })
